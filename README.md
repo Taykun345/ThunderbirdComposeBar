@@ -1,8 +1,8 @@
 # Faixa de Opções para o Thunderbird
 
-Complemento da Bluecker que recria no Thunderbird a faixa de opções da janela de composição do Outlook, com o Pincel de Formatação. Esta é a **0.9.0**: abas Mensagem, Inserir, Formatar Texto e Ajuda, a **Visualização Dinâmica**, as **confirmações de entrega e de leitura**, o **Acompanhamento**, a opção de **ocultar a barra de menus** da janela de mensagem, a faixa em **seis idiomas** (português, inglês, espanhol, italiano, alemão e francês), **Alterar Estilos**, **Sombreamento**, **Bordas**, **Lista de Vários Níveis**, **Classificar**, **Mesclar Formatação** e **Selecionar Texto com Formatação Semelhante**. Feita para o **Thunderbird ESR 153** (testada também no 156).
+Complemento da Bluecker que recria no Thunderbird a faixa de opções da janela de composição do Outlook, com o Pincel de Formatação. Esta é a **0.9.1**: abas Mensagem, Inserir, Formatar Texto e Ajuda, a **Visualização Dinâmica**, as **confirmações de entrega e de leitura**, o **Acompanhamento**, a opção de **ocultar a barra de menus** da janela de mensagem, a faixa em **seis idiomas** (português, inglês, espanhol, italiano, alemão e francês), **Alterar Estilos**, **Sombreamento**, **Bordas**, **Lista de Vários Níveis**, **Classificar**, **Mesclar Formatação** e **Selecionar Texto com Formatação Semelhante**. Feita para o **Thunderbird ESR 153** (testada também no 156).
 
-- ID: `faixa@bluecker.com` · versão 0.9.0 · Manifest V3 com WebExtension Experiment
+- ID: `faixa@bluecker.com` · versão 0.9.1 · Manifest V3 com WebExtension Experiment
 - **Alterar Estilos** (Formatar Texto → Estilos), como no Word: **Conjunto de Estilos** (Padrão, Word 2010, Word 2003, Linhas), **Cores** (Office, Office 2007–2010, Escala de Cinza, Azul, Verde, Vermelho, Violeta), **Fontes** (Office, Office 2007–2010, Arial, Georgia, Times New Roman, Verdana) e **Espaçamento entre Parágrafos** (Sem Espaço, Compacto, Estreito, Aberto, Relaxado, Duplo). Vale para a mensagem: os títulos e as ênfases que já estão no texto mudam junto, a galeria de estilos e as Cores do Tema da paleta acompanham, e cada escolha sai com um Ctrl+Z
 - **Sombreamento** e **Bordas** (Formatar Texto → Parágrafo): o fundo do parágrafo (com só uma parte selecionada, o fundo do texto) e as bordas embaixo, em cima, dos lados, em volta, entre os parágrafos ou todas. O botão Bordas repete a última escolha do menu e mostra qual é, como no Word
 - **Lista de Vários Níveis**: 1. → a. → i., I. → A. → 1., A. → 1. → a. e ● → ○ → ■; Aumentar e Diminuir Recuo mudam o nível do item. No envio, cada nível leva o seu marcador escrito, para o Gmail e o Outlook mostrarem igual
@@ -36,7 +36,7 @@ O `.xpi` de cada versão está nas [Releases](https://github.com/vagner-dias/Thu
 ### Numa máquina, para testar
 
 1. No Thunderbird: **Ferramentas → Extensões e temas**.
-2. Engrenagem → **Instalar extensão a partir de arquivo…** → escolha `faixa-0.9.0.xpi`. Por cima de uma versão anterior, é só instalar: as preferências, as assinaturas e as Partes Rápidas continuam.
+2. Engrenagem → **Instalar extensão a partir de arquivo…** → escolha `faixa-0.9.1.xpi`. Por cima de uma versão anterior, é só instalar: as preferências, as assinaturas e as Partes Rápidas continuam.
 3. O Thunderbird avisa que a extensão pede **acesso total**. É esperado: a faixa é um *Experiment*, que roda dentro do Thunderbird para mexer na janela de composição.
 
 Para uma sessão só (some ao fechar o Thunderbird): **Ferramentas → Ferramentas de desenvolvimento → Depurar extensões → Este Thunderbird → Carregar extensão temporária…** e escolha o `.xpi` ou o `manifest.json` da raiz do repositório.
@@ -53,7 +53,7 @@ Crie ou complete o `policies.json` na pasta `distribution` da instalação do Th
     "ExtensionSettings": {
       "faixa@bluecker.com": {
         "installation_mode": "force_installed",
-        "install_url": "https://suporte.exemplo.com.br/faixa/faixa-0.9.0.xpi"
+        "install_url": "https://suporte.exemplo.com.br/faixa/faixa-0.9.1.xpi"
       }
     },
     "3rdparty": {
