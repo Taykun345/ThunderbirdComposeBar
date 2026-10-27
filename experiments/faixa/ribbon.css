@@ -17,6 +17,7 @@
   --fx-accent: light-dark(#2F6FD1, #86AEF7);
   --fx-accent-weak: light-dark(#E3ECFB, #2E3B52);
   --fx-danger: light-dark(#C4262E, #FF7B80);
+  --fx-ok: light-dark(#1E8A3E, #6FD08C); /* traço verde de ícones (Verificar Nomes) */
   --fx-shadow: 0 10px 28px rgba(19, 30, 52, 0.18), 0 2px 6px rgba(19, 30, 52, 0.1);
   --fx-radius: 6px;
 }
@@ -350,6 +351,8 @@ button:disabled .fx-ic.fx-red { color: var(--fx-faint); }
 [aria-pressed="true"].fx-small:hover,
 [aria-pressed="true"].fx-icon:hover { background: var(--fx-pressed); box-shadow: inset 0 0 0 1px var(--fx-accent); }
 #faixa-root button:disabled[aria-pressed="true"] { background: transparent; box-shadow: none; }
+/* Botão desativado: o traço verde do ícone fica apagado como o resto. */
+:where(#faixa-root, .fx-layer) button:disabled { --fx-ok: currentColor; }
 .fx-phase { opacity: 0.8; }
 
 /* caixas de fonte e tamanho */
@@ -408,7 +411,7 @@ button:disabled .fx-ic.fx-red { color: var(--fx-faint); }
   overflow: hidden;
 }
 .fx-tile:hover:not(:disabled) { border-color: var(--fx-line2); background: var(--fx-hover); }
-.fx-tile[aria-pressed="true"] { border-color: var(--fx-accent); background: var(--fx-accent-weak); }
+.fx-tile[aria-selected="true"] { border-color: var(--fx-accent); background: var(--fx-accent-weak); }
 .fx-tile:disabled { opacity: 0.55; }
 .fx-tile[hidden] { display: none; }
 .fx-tprev {
@@ -446,7 +449,6 @@ button:disabled .fx-ic.fx-red { color: var(--fx-faint); }
  * caber); palavra de 7 letras ou mais pode ser hifenizada ("Text-marke", "Mensa-gem"). */
 #faixa-root.fx-c2 .fx-large .fx-lbl > span,
 #faixa-root.fx-c2 .fx-lsplit > .fx-drop > span { overflow-wrap: break-word; hyphenate-limit-chars: 7 3 3; }
-#faixa-root.fx-c2 .fx-tile:nth-child(n + 4) { display: none; }
 #faixa-root.fx-c2 .fx-cfont { width: 96px; }
 
 /* ===== camadas: menus, dicas, aviso do pincel ===== */
@@ -648,6 +650,7 @@ button:disabled .fx-ic.fx-red { color: var(--fx-faint); }
     --fx-accent: Highlight;
     --fx-accent-weak: Canvas;
     --fx-danger: CanvasText;
+    --fx-ok: currentColor;
     --fx-shadow: none;
   }
   #faixa-root,
@@ -673,11 +676,13 @@ button:disabled .fx-ic.fx-red { color: var(--fx-faint); }
   .fx-tab.fx-filetab[aria-expanded="true"] { background: Highlight; color: HighlightText; box-shadow: none; }
   .fx-mi:hover:not(:disabled) .fx-mic,
   .fx-mi:focus-visible .fx-mic,
+  .fx-mi:hover:not(:disabled) .fx-mck,
+  .fx-mi:focus-visible .fx-mck,
   .fx-mi.fx-current .fx-mck { color: HighlightText; }
   #faixa-root button:disabled[aria-pressed="true"] { background: Canvas; color: GrayText; outline: 1px dashed GrayText; }
   .fx-tab[aria-selected="true"] { color: Highlight; }
   .fx-tab[aria-selected="true"]::after { background: Highlight; }
-  .fx-tile[aria-pressed="true"] { border-color: Highlight; outline: 2px solid Highlight; outline-offset: -2px; }
+  .fx-tile[aria-selected="true"] { border-color: Highlight; outline: 2px solid Highlight; outline-offset: -2px; }
   #faixa-root button:focus-visible,
   #faixa-root input:focus-visible,
   .fx-layer button:focus-visible,

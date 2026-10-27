@@ -249,7 +249,7 @@ async def main():
         await pg.wait_for_timeout(150)
         tag = await pg.evaluate(f"(() => {{ const d = {EDITOR}; const t = d.body.querySelector('h1'); return t ? t.outerHTML.slice(0, 200) : null; }})()")
         check("galeria aplica Título 1 (h1 + CSS inline)", bool(tag) and "font-size: 16pt" in tag, tag)
-        tile = await pg.get_by_role("option", name="Título 1").first.get_attribute("aria-pressed")
+        tile = await pg.get_by_role("option", name="Título 1").first.get_attribute("aria-selected")
         check("galeria marca Título 1", tile == "true", tile)
         # espaçamento pelo menu
         await pg.get_by_role("button", name="Espaçamento de Linha e Parágrafo").first.click()

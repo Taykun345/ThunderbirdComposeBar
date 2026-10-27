@@ -260,7 +260,7 @@
     {
       "id": "formatar",
       "label": "Formatar Texto",
-      "collapseOrder": ["zoomGroup", "editing", "format", "stylesGroup", "clipboard2", "paragraph"],
+      "collapseOrder": ["zoomGroup", "editing", "format", "stylesGroup", "clipboard2", "paragraph", "font"],
       "groups": [
         {
           "id": "clipboard2", "label": "Área de Transferência", "compact": true, "icon": "clipboard-paste",

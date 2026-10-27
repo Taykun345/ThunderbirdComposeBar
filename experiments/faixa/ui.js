@@ -437,6 +437,37 @@ var FaixaShortcuts = class {
     return out;
   }
 
+  /** Combinações (forma canônica) de um comando no perfil ativo, como em labelsFor. */
+  combosFor(cmd, args) {
+    const out = [];
+    for (const entry of this.map.values()) {
+      if (entry.cmd != cmd || entry.hidden) {
+        continue;
+      }
+      if (args && entry.args && JSON.stringify(entry.args) != JSON.stringify(args)) {
+        continue;
+      }
+      if (!args && entry.args) {
+        continue;
+      }
+      out.push(entry.combo);
+    }
+    return out;
+  }
+
+  /** Forma canônica no formato de aria-keyshortcuts ("Ctrl+Up" vira "Control+ArrowUp").
+   * A tecla "+" fica de fora: o próprio "+" separa as teclas nesse formato. */
+  ariaKeys(combo) {
+    if (!combo || combo.endsWith("++")) {
+      return null;
+    }
+    const names = {
+      Ctrl: this.isMac ? "Meta" : "Control", MacCtrl: "Control", Esc: "Escape",
+      Up: "ArrowUp", Down: "ArrowDown", Left: "ArrowLeft", Right: "ArrowRight",
+    };
+    return combo.split("+").map(k => names[k] || k).join("+");
+  }
+
   display(text) {
     if (!this.isMac) {
       return FaixaI18n.keys(text);
@@ -1043,9 +1074,19 @@ var FaixaUI = class {
     const bar = this.h("i", { class: "fx-cbar" });
     bar.style.setProperty("background", this.lastColor[item.cmd]);
     b.append(bar);
-    b.addEventListener("click", () => {
-      if (!b.disabled) {
-        this.onCommand(item.cmd, { value: this.lastColor[item.cmd] }, { source: b });
+    // Como bindButton, mas a cor é a última escolhida na hora do clique.
+    b.addEventListener("click", e => {
+      if (b.disabled) {
+        return;
+      }
+      const inPopup = this.popup && this.popup.contains(b);
+      const kb = e.detail == 0;
+      if (kb) {
+        this.returnFocus();
+      }
+      this.onCommand(item.cmd, { value: this.lastColor[item.cmd] }, { source: b, keyboard: kb });
+      if (inPopup) {
+        this.closePopup();
       }
     });
     const arrow = this.h("button", { class: "fx-arrow", type: "button", "aria-label": FaixaI18n.t("ribbon.moreOf", "Mais opções de {name}", { name: meta.label }), "aria-haspopup": "dialog" });
@@ -1131,8 +1172,9 @@ var FaixaUI = class {
 
   renderGallery(item) {
     const meta = this.meta(item.cmd);
-    const box = this.h("div", { class: "fx-gallery", role: "listbox", "aria-label": meta.label });
-    const tiles = this.h("div", { class: "fx-tiles" });
+    // A lista é só a faixa de estilos; os botões de rolar e "todos" ficam fora dela.
+    const box = this.h("div", { class: "fx-gallery", role: "group", "aria-label": meta.label });
+    const tiles = this.h("div", { class: "fx-tiles", role: "listbox", "aria-label": meta.label });
     tiles.addEventListener("mouseleave", () => this.endPreview());
     this.galleryTiles = [];
     for (const style of this.def.styles) {
@@ -1159,7 +1201,7 @@ var FaixaUI = class {
   }
 
   makeStyleTile(style) {
-    const t = this.h("button", { class: "fx-tile", type: "button", role: "option", "aria-label": style.label, "data-style": style.id });
+    const t = this.h("button", { class: "fx-tile", type: "button", role: "option", "aria-selected": "false", "aria-label": style.label, "data-style": style.id });
     const prev = this.h("span", { class: "fx-tprev", text: "AaBbCc" });
     this.applyPreviewCss(prev, style.preview);
     t.append(prev, this.h("span", { class: "fx-tname", text: style.label }));
@@ -1520,6 +1562,8 @@ var FaixaUI = class {
       g.el.classList.remove("fx-gcollapsed");
     }
     this.fitLevel = 0;
+    // A galeria mostra 4 ou 3 estilos conforme o nível; a medida já conta com isso.
+    this.scrollGallery(0);
     const over = () => panel.scrollWidth > panel.clientWidth + 1;
     for (const cls of ["fx-c1", "fx-c2"]) {
       if (!over()) {
@@ -1527,6 +1571,7 @@ var FaixaUI = class {
       }
       root.classList.add(cls);
       this.fitLevel++;
+      this.scrollGallery(0);
     }
     const tab = this.def.tabs.find(t => t.id == this.selectedTab);
     const order = (tab && tab.collapseOrder) || groups.map(g => g.id).reverse().slice(0, -1);
@@ -1695,7 +1740,7 @@ var FaixaUI = class {
         case "gallery": {
           for (const t of this.galleryTiles || []) {
             t.disabled = !enabled;
-            t.setAttribute("aria-pressed", enabled && s.styleId == t.getAttribute("data-style") ? "true" : "false");
+            t.setAttribute("aria-selected", enabled && s.styleId == t.getAttribute("data-style") ? "true" : "false");
           }
           for (const a of c.also) {
             a.disabled = !enabled;
@@ -1749,11 +1794,90 @@ var FaixaUI = class {
   /* ---------- dicas ---------- */
 
   attachTip(el, meta, cmd, args) {
-    el.addEventListener("mouseenter", () => {
+    const schedule = () => {
       this.win.clearTimeout(this.tipTimer);
       this.tipTimer = this.win.setTimeout(() => this.showTip(el, meta, cmd, args), 550);
-    });
+    };
+    el.addEventListener("mouseenter", schedule);
     el.addEventListener("mouseleave", () => this.hideTip());
+    // Foco do teclado também mostra a dica (o clique do mouse não: :focus-visible).
+    // Nas caixas de texto não, para não cobrir a lista enquanto se digita.
+    el.addEventListener("focusin", e => {
+      const t = e.target;
+      if (t.localName == "button" && t.matches(":focus-visible")) {
+        schedule();
+      }
+    });
+    el.addEventListener("focusout", e => {
+      if (!el.contains(e.relatedTarget)) {
+        this.hideTip();
+      }
+    });
+    // Esc só fecha a dica aberta; o próximo Esc segue o caminho de sempre.
+    el.addEventListener("keydown", e => {
+      if (e.key == "Escape" && this.tipEl && this.tipAnchor == el) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.hideTip();
+      }
+    });
+    const target = el.matches("button, input") ? el : el.querySelector("button, input");
+    if (target) {
+      // Guardado para refazer quando o perfil de atalhos muda (Opções da Faixa). Os menus
+      // recriam os botões a cada abertura: os que já saíram da tela vão embora de vez em quando.
+      this.ariaKeyTargets = this.ariaKeyTargets || [];
+      if (this.ariaKeyTargets.length > 400 && this.root && this.root.isConnected) {
+        this.ariaKeyTargets = this.ariaKeyTargets.filter(t => t.target.isConnected);
+      }
+      this.ariaKeyTargets.push({ target, meta, cmd, args });
+      this.setAriaKeys(target, meta, cmd, args);
+    }
+  }
+
+  setAriaKeys(target, meta, cmd, args) {
+    const keys = this.ariaKeysFor(meta, cmd, args);
+    if (keys) {
+      target.setAttribute("aria-keyshortcuts", keys);
+    } else {
+      target.removeAttribute("aria-keyshortcuts");
+    }
+  }
+
+  /** Os aria-keyshortcuts de novo, com os atalhos do perfil atual. */
+  refreshAriaKeys() {
+    this.ariaKeyTargets = this.ariaKeyTargets || [];
+    if (this.root && this.root.isConnected) {
+      this.ariaKeyTargets = this.ariaKeyTargets.filter(t => t.target.isConnected);
+    }
+    for (const t of this.ariaKeyTargets) {
+      this.setAriaKeys(t.target, t.meta, t.cmd, t.args);
+    }
+  }
+
+  /** Os atalhos da dica no formato de aria-keyshortcuts ("Control+Shift+B"), ou "". */
+  ariaKeysFor(meta, cmd, args) {
+    const combos = (meta.keys || []).map(k => FaixaShortcuts.normalize(k));
+    if (cmd && this.shortcuts) {
+      combos.push(...this.shortcuts.combosFor(cmd, args));
+      if (meta.sameAs) {
+        combos.push(...this.shortcuts.combosFor(meta.sameAs));
+      }
+      for (const k of meta.tbKeys || []) {
+        const combo = FaixaShortcuts.normalize(k);
+        const mine = this.shortcuts.map.get(combo);
+        if (!mine || mine.cmd == cmd || mine.cmd == meta.sameAs) {
+          combos.push(combo);
+        }
+      }
+    }
+    const out = [];
+    for (const combo of combos) {
+      const aria = combo && this.shortcuts ? this.shortcuts.ariaKeys(combo) : null;
+      if (aria && !out.includes(aria)) {
+        out.push(aria);
+      }
+    }
+    return out.join(" ");
   }
 
   showTip(anchor, meta, cmd, args) {
@@ -1788,6 +1912,7 @@ var FaixaUI = class {
     tip.style.setProperty("left", left + "px");
     tip.style.setProperty("top", Math.round(r.bottom + 6) + "px");
     this.tipEl = tip;
+    this.tipAnchor = anchor;
   }
 
   /** Atalhos de um comando para dicas e menus: os do perfil ativo (e do comando
@@ -1817,6 +1942,7 @@ var FaixaUI = class {
     if (this.tipEl) {
       this.tipEl.remove();
       this.tipEl = null;
+      this.tipAnchor = null;
     }
   }
 
@@ -1882,6 +2008,7 @@ var FaixaUI = class {
     const r = anchor.getBoundingClientRect();
     this.closePopup();
     this.hideTip();
+    this.removeColorInput(); // seletor de "Mais Cores" cancelado antes
     const pop = this.h("div", { class: ("fx-popup " + cls).trim() });
     pop.append(content);
     pop.addEventListener("mousedown", e => {
@@ -2425,14 +2552,29 @@ var FaixaUI = class {
   }
 
   pickCustomColor(cmd, pick) {
-    const input = this.h("input", { type: "color", value: this.lastColor[cmd] || "#000000", style: { position: "fixed", left: "-100px", top: "0" } });
+    // Caixa escondida só para abrir o seletor do sistema: fora do Tab e dos leitores
+    // de tela. Cancelar o seletor não dispara change; a sobra sai na próxima vez.
+    this.removeColorInput();
+    const input = this.h("input", { type: "color", tabindex: "-1", "aria-hidden": "true", value: this.lastColor[cmd] || "#000000", style: { position: "fixed", left: "-100px", top: "0" } });
+    this.colorInput = input;
     this.layer.append(input);
     input.addEventListener("change", () => {
       pick(input.value.toUpperCase());
-      input.remove();
+      this.removeColorInput();
     });
-    input.addEventListener("blur", () => this.win.setTimeout(() => input.remove(), 1000));
+    input.addEventListener("blur", () => this.win.setTimeout(() => {
+      if (this.colorInput == input) {
+        this.removeColorInput();
+      }
+    }, 1000));
     input.click();
+  }
+
+  removeColorInput() {
+    if (this.colorInput) {
+      this.colorInput.remove();
+      this.colorInput = null;
+    }
   }
 
   async openFontMenu(anchor, input, kb = false) {
@@ -2538,15 +2680,15 @@ var FaixaUI = class {
   }
 
   openStylesMenu(anchor, kb = false) {
-    const grid = this.h("div", { class: "fx-sgrid" });
+    const grid = this.h("div", { class: "fx-sgrid", role: "listbox", "aria-label": FaixaI18n.t("styles.all", "Todos os estilos") });
     for (const style of this.def.styles) {
       const t = this.makeStyleTile(style);
-      t.setAttribute("aria-pressed", this.state.styleId == style.id ? "true" : "false");
+      t.setAttribute("aria-selected", this.state.styleId == style.id ? "true" : "false");
       grid.append(t);
     }
     const pop = this.openPopup(anchor, grid, "fx-mstyles");
     if (pop && kb) {
-      this.focusInPopup(pop, grid.querySelector('[aria-pressed="true"]'));
+      this.focusInPopup(pop, grid.querySelector('[aria-selected="true"]'));
     }
   }
 
@@ -2557,6 +2699,7 @@ var FaixaUI = class {
       this.dialog.close(null);
     }
     this.closePopup();
+    this.removeColorInput();
     this.endPreview();
     this.onPreview = null;
     this.onPreviewEnd = null;
