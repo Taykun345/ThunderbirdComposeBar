@@ -1,8 +1,8 @@
 # Faixa de Opções para o Thunderbird
 
-Complemento da Bluecker que recria no Thunderbird a faixa de opções da janela de composição do Outlook, com o Pincel de Formatação. Esta é a **0.9.0**: abas Mensagem, Inserir, Formatar Texto e Ajuda, a **Visualização Dinâmica**, as **confirmações de entrega e de leitura**, o **Acompanhamento**, a opção de **ocultar a barra de menus** da janela de mensagem, a faixa em **seis idiomas** (português, inglês, espanhol, italiano, alemão e francês), **Alterar Estilos**, **Sombreamento**, **Bordas**, **Lista de Vários Níveis**, **Classificar**, **Mesclar Formatação** e **Selecionar Texto com Formatação Semelhante**. Feita para o **Thunderbird ESR 153** (testada também no 156).
+Complemento da Bluecker que recria no Thunderbird a faixa de opções da janela de composição do Outlook, com o Pincel de Formatação. Esta é a **0.9.1**: abas Mensagem, Inserir, Formatar Texto e Ajuda, a **Visualização Dinâmica**, as **confirmações de entrega e de leitura**, o **Acompanhamento**, a opção de **ocultar a barra de menus** da janela de mensagem, a faixa em **seis idiomas** (português, inglês, espanhol, italiano, alemão e francês), **Alterar Estilos**, **Sombreamento**, **Bordas**, **Lista de Vários Níveis**, **Classificar**, **Mesclar Formatação** e **Selecionar Texto com Formatação Semelhante**. Feita para o **Thunderbird ESR 153** (testada também no 156).
 
-- ID: `faixa@bluecker.com` · versão 0.9.0 · Manifest V3 com WebExtension Experiment
+- ID: `faixa@bluecker.com` · versão 0.9.1 · Manifest V3 com WebExtension Experiment
 - **Alterar Estilos** (Formatar Texto → Estilos), como no Word: **Conjunto de Estilos** (Padrão, Word 2010, Word 2003, Linhas), **Cores** (Office, Office 2007–2010, Escala de Cinza, Azul, Verde, Vermelho, Violeta), **Fontes** (Office, Office 2007–2010, Arial, Georgia, Times New Roman, Verdana) e **Espaçamento entre Parágrafos** (Sem Espaço, Compacto, Estreito, Aberto, Relaxado, Duplo). Vale para a mensagem: os títulos e as ênfases que já estão no texto mudam junto, a galeria de estilos e as Cores do Tema da paleta acompanham, e cada escolha sai com um Ctrl+Z
 - **Sombreamento** e **Bordas** (Formatar Texto → Parágrafo): o fundo do parágrafo (com só uma parte selecionada, o fundo do texto) e as bordas embaixo, em cima, dos lados, em volta, entre os parágrafos ou todas. O botão Bordas repete a última escolha do menu e mostra qual é, como no Word
 - **Lista de Vários Níveis**: 1. → a. → i., I. → A. → 1., A. → 1. → a. e ● → ○ → ■; Aumentar e Diminuir Recuo mudam o nível do item. No envio, cada nível leva o seu marcador escrito, para o Gmail e o Outlook mostrarem igual
@@ -36,7 +36,7 @@ O `.xpi` de cada versão está nas [Releases](https://github.com/vagner-dias/Thu
 ### Numa máquina, para testar
 
 1. No Thunderbird: **Ferramentas → Extensões e temas**.
-2. Engrenagem → **Instalar extensão a partir de arquivo…** → escolha `faixa-0.9.0.xpi`. Por cima de uma versão anterior, é só instalar: as preferências, as assinaturas e as Partes Rápidas continuam.
+2. Engrenagem → **Instalar extensão a partir de arquivo…** → escolha `faixa-0.9.1.xpi`. Por cima de uma versão anterior, é só instalar: as preferências, as assinaturas e as Partes Rápidas continuam.
 3. O Thunderbird avisa que a extensão pede **acesso total**. É esperado: a faixa é um *Experiment*, que roda dentro do Thunderbird para mexer na janela de composição.
 
 Para uma sessão só (some ao fechar o Thunderbird): **Ferramentas → Ferramentas de desenvolvimento → Depurar extensões → Este Thunderbird → Carregar extensão temporária…** e escolha o `.xpi` ou o `manifest.json` da raiz do repositório.
@@ -53,7 +53,7 @@ Crie ou complete o `policies.json` na pasta `distribution` da instalação do Th
     "ExtensionSettings": {
       "faixa@bluecker.com": {
         "installation_mode": "force_installed",
-        "install_url": "https://suporte.exemplo.com.br/faixa/faixa-0.9.0.xpi"
+        "install_url": "https://suporte.exemplo.com.br/faixa/faixa-0.9.1.xpi"
       }
     },
     "3rdparty": {
@@ -117,7 +117,7 @@ Troque a URL pelo servidor interno. O que vier em `3rdparty` vale acima da escol
 - Em `assinaturaPadrao`, cada conta procura primeiro o e-mail exato, depois o domínio (`@bluecker.com`) e por fim `*` (todas as contas). `nova` vale para mensagens novas; `resposta`, para respostas e encaminhamentos. `null` quer dizer nenhuma assinatura. Conta sem regra fica com a assinatura das Configurações da conta do Thunderbird.
 - A política vence o usuário **campo a campo**: com só `nova` definida, o usuário ainda escolhe a de respostas. O que a política define aparece travado, com cadeado.
 - Os campos entre chaves vêm da identidade (nome, e-mail, organização) e do cartão de visita dela (vCard, em Configurações da conta → Editar cartão): `{nome}`, `{email}`, `{cargo}`, `{departamento}`, `{organizacao}`, `{telefone}`, `{celular}`, `{site}` (também em inglês: `{name}`, `{title}`, `{phone}`...). A linha cujos campos ficam todos vazios sai da assinatura, e um campo vazio leva junto o separador ao lado (`·`, `|`, `-`, `,`).
-- O HTML passa por uma limpeza: ficam texto, formatação, tabelas, links `http`, `https`, `mailto` e `tel` e imagens `https`, `cid` e `data:` (PNG, JPEG, GIF, WebP). Scripts, eventos, formulários e estilos com `url()` saem. Imagem `https` é baixada por quem recebe; para ir junto com a mensagem, use `data:` (o Thunderbird envia como imagem embutida).
+- O HTML passa por uma limpeza: ficam texto, formatação, tabelas, links `http`, `https`, `mailto` e `tel` e imagens `http`, `https`, `cid` e `data:` (PNG, JPEG, GIF, WebP). Scripts, eventos, formulários e estilos com `url()` saem. Imagem `http` ou `https` é baixada por quem recebe; para ir junto com a mensagem, use `data:` (o Thunderbird envia como imagem embutida).
 
 #### Partes Rápidas da organização
 
@@ -435,13 +435,13 @@ O **AltGr** (Alt da direita) sempre digita o caractere do teclado.
 | Caminho | O que é |
 |---|---|
 | `manifest.json`, `_locales/` | Manifesto MV3 e o nome e a descrição nos seis idiomas |
-| `background.js`, `lib/config.js` | Página de eventos: configuração (política > usuário > padrão), comandos que usam a API compose (prioridade, formato de envio), Salvar Seleção na Galeria, Ajuda e Contatar o Suporte |
+| `background.js`, `lib/config.js` | Página de eventos: configuração (política > usuário > padrão), comandos que usam a API compose (prioridade, formato de envio), Salvar Seleção na Galeria e Ajuda |
 | `experiments/faixa/implementation.js` | API do experiment, controlador de cada janela de composição, autoteste e fila de eventos |
 | `experiments/faixa/host.js` | Tudo o que depende de `messengercompose.xhtml` no TB 153: montagem, Enviar, coluna dos rótulos do cabeçalho, comandos nativos, envio, anexos (mensagens e cartões de visita), pastas e levantamento de teclas |
 | `experiments/faixa/engine.js` | Motor de edição pelo editor do Gecko: um comando = um Ctrl+Z; pincel, tamanhos em pt, estilos, Sombreamento, Bordas, listas de vários níveis, Classificar, Selecionar Texto com Formatação Semelhante, Mesclar Formatação, Alterar Estilos, tabela, Texto sem Formatação, Visualização Dinâmica (fora do editor), normalização do envio |
 | `experiments/faixa/themes.js` | Alterar Estilos: conjuntos de estilos, cores e fontes do tema e espaçamento; a definição da faixa com o tema da mensagem |
 | `experiments/faixa/ui.js` | Interface da faixa (abas, grupos que recolhem, menus, grades de tabela, emoji e símbolos, dicas) e leitura dos atalhos |
-| `experiments/faixa/names.js`, `dialogs.js` | Verificar Nomes e Selecionar Nomes; as janelas da faixa (escolha de nomes, Selecionar Nomes, Anexar Mensagem, cartões de visita, Data e Hora, Salvar Seleção, Contatar o Suporte, Sobre) |
+| `experiments/faixa/names.js`, `dialogs.js` | Verificar Nomes e Selecionar Nomes; as janelas da faixa (escolha de nomes, Selecionar Nomes, Anexar Mensagem, cartões de visita, Data e Hora, Salvar Seleção, Sobre) |
 | `experiments/faixa/signatures.js`, `quickparts.js`, `sanitize.js` | Assinaturas (padrão por conta, campos, troca de conta, menu), Partes Rápidas (galeria, inserção, Salvar Seleção) e a limpeza do HTML delas e do que entra com Mesclar Formatação; também usados pelas páginas Assinaturas e Partes Rápidas |
 | `experiments/faixa/ribbon.css`, `icons.js` | Visual da faixa e ícones (Lucide, licença ISC em `LICENSES/`) |
 | `ribbon/definition.json` | Definição declarativa: comandos, abas, grupos, menus, estilos, emoji e símbolos, perfis de atalho e a tabela de referência do Office. Textos em pt-BR |

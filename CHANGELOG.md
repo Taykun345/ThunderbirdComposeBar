@@ -2,6 +2,24 @@
 
 O `.xpi` de cada versão fica nas [Releases](https://github.com/vagner-dias/ThunderbirdComposeBar/releases). A seção de cada versão vira as notas da release (ver [Publicar uma versão](README.md#publicar-uma-versão)).
 
+## 0.9.1
+
+Correções de uma revisão do código, sem comandos novos.
+
+- **Classificar** só reordena os parágrafos seguidos: uma citação ou tabela no meio da seleção fica no lugar.
+- **Maiúsculas e Minúsculas** e o **Pincel** valem para todos os trechos de Selecionar Texto com Formatação Semelhante; Maiúsculas e Minúsculas não mexe mais em `<style>`.
+- **Bordas** ficam fora de tabelas e listas, como já dizia o aviso; o envio não mexe mais nos `<font>` da citação e da assinatura.
+- Seleções grandes ficam mais leves nos comandos de parágrafo e na prévia do Sombreamento.
+- Janela estreita: a galeria de estilos e Todos os estilos mostram todos os estilos de novo.
+- Alto contraste: a marca do item escolhido continua visível no item em foco. Leitores de tela: a galeria anuncia o estilo atual, e as dicas e os atalhos aparecem também pelo teclado.
+- **Salvar Seleção na Galeria** só diz que gravou depois de gravar, e avisa quando não deu.
+- Duas gravações ao mesmo tempo (Opções da Faixa, Ctrl+F1, outra janela das Assinaturas) não se apagam mais.
+- `{site}` vira link na assinatura; imagens coladas nas Assinaturas e Partes Rápidas são reduzidas como as inseridas; Partes Rápidas da política acima de 1 MB são ignoradas.
+- **Verificar Nomes** não repete o destinatário e conta os nomes escolhidos em Mostrar Mais Nomes.
+- **Alta e Baixa Prioridade** reconhecem as prioridades intermediárias do Thunderbird.
+- **Data e Hora** lembra o formato também depois de reiniciar o Thunderbird.
+- Desligar ou atualizar a faixa no meio da carga ou de um envio não deixa mais restos na janela.
+
 ## 0.9.0
 
 Cabeçalho da mensagem mais compacto.

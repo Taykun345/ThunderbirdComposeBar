@@ -195,6 +195,7 @@ var FaixaFollowUpFlagger = class {
     this.deps = deps;
     // Message-ID → { until: validade (ms), folders: pastas que ainda esperam a cópia, done: pastas já feitas }
     this.pending = new Map();
+    this.timers = new Set();
     this.listening = false;
     this.flagged = 0;
     this.load();
@@ -225,11 +226,37 @@ var FaixaFollowUpFlagger = class {
   }
 
   later(fn, ms) {
+    // Guardados para o desligamento: um cancelado que dispare mesmo assim não faz nada.
+    const timer = { id: null };
+    const run = () => {
+      if (this.timers.delete(timer)) {
+        fn();
+      }
+    };
+    this.timers.add(timer);
     if (this.deps.setTimeout) {
-      return this.deps.setTimeout(fn, ms);
+      timer.id = this.deps.setTimeout(run, ms);
+    } else {
+      const { setTimeout } = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
+      timer.id = setTimeout(run, ms);
     }
-    const { setTimeout } = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
-    return setTimeout(fn, ms);
+    return timer.id;
+  }
+
+  /** Complemento desligado ou atualizado: as buscas agendadas param. */
+  cancelTimers() {
+    let clear = this.deps.clearTimeout || null;
+    if (!clear && !this.deps.setTimeout) {
+      clear = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs").clearTimeout;
+    }
+    for (const timer of this.timers) {
+      try {
+        if (clear) {
+          clear(timer.id);
+        }
+      } catch (e) {}
+    }
+    this.timers.clear();
   }
 
   /** Rascunhos, Saída, Modelos e Lixeira não recebem a estrela. */
@@ -1124,8 +1151,22 @@ var FaixaComposeController = class {
         return;
       }
     }
-    this.api.emitCommand(this.tabId, "saveQuickPart", { id: existing ? existing.id : null, nome: name, html: sel.html });
-    this.ui.flash(t("qp.saved", "“{name}” está na galeria de Partes Rápidas.", { name }));
+    // A galeria só tem a Parte Rápida depois que o background grava: o aviso espera a resposta
+    // (com o background acordando, o comando pode esperar na fila até 60 s).
+    const reply = String(Math.random()).slice(2);
+    const answer = new Promise(resolve => this.pongWaiters.set(reply, resolve));
+    this.api.emitCommand(this.tabId, "saveQuickPart", { id: existing ? existing.id : null, nome: name, html: sel.html, reply });
+    const timeout = new Promise(resolve => this.win.setTimeout(() => resolve({ ok: false }), 70000));
+    const result = await Promise.race([answer, timeout]);
+    this.pongWaiters.delete(reply);
+    if (this.disposed || !this.ui) {
+      return;
+    }
+    if (result && result.ok) {
+      this.ui.flash(t("qp.saved", "“{name}” está na galeria de Partes Rápidas.", { name }));
+    } else {
+      this.ui.flash(t("qp.saveFailed", "Não foi possível gravar “{name}” na galeria de Partes Rápidas. Tente de novo.", { name }), 6000);
+    }
   }
 
   /** Mesclar Formatação: o HTML da Área de Transferência entra com a formatação do destino.
@@ -1411,11 +1452,13 @@ var FaixaComposeController = class {
   }
 
   setMessageState(state) {
-    if (state && state._pong) {
-      const resolve = this.pongWaiters.get(state._pong);
+    // Respostas do background: _pong (autoteste) e _reply (resultado de um comando, com ok).
+    const nonce = state && (state._pong || state._reply);
+    if (nonce) {
+      const resolve = this.pongWaiters.get(nonce);
       if (resolve) {
-        this.pongWaiters.delete(state._pong);
-        resolve();
+        this.pongWaiters.delete(nonce);
+        resolve(state);
       }
       return;
     }
@@ -1427,7 +1470,7 @@ var FaixaComposeController = class {
     this.endPreview();
     this.host.setMainToolbarHidden(config.ocultarBarraThunderbird !== false);
     this.host.setMenubarHidden(faixaMenubarChoice(config));
-    if (this.signatureWaiting && this.engine) {
+    if (this.signatureWaiting && this.engine && this.api.configured) {
       // A configuração chegou depois do editor pronto: a assinatura padrão entra se a
       // mensagem ainda não foi mexida.
       let untouched = false;
@@ -1441,6 +1484,7 @@ var FaixaComposeController = class {
     }
     this.ui.config = config;
     this.ui.shortcuts = new FaixaShortcuts(this.api.definition, config.perfilAtalhos, AppConstants.platform == "macosx");
+    this.ui.refreshAriaKeys();
     this.ui.setState(Object.assign({ support: faixaHasSupport(config.suporte) }, this.barsState(config)));
     if (this.engine) {
       this.engine.applyLabel = this.ui.shortcuts.labelsFor("painterApply")[0] || "";
@@ -2096,7 +2140,11 @@ var FaixaComposeController = class {
           { name: "Zeferino Faixa", email: testMails[0] },
           { name: "Faixa Teste Um", email: testMails[1] },
           { name: "Faixa Teste Dois", email: testMails[2] },
-        ], T("book", "Faixa de Opções — autoteste"), ["Faixa de Opções — autoteste", "Ribbon — self-test"]); // o de um teste interrompido, em qualquer idioma
+        ], T("book", "Faixa de Opções — autoteste"), [
+          "Faixa de Opções — autoteste",
+          "Ribbon — self-test",
+          ...Object.values(this.api.overlays || {}).map(o => o && o.strings && o.strings["test.book"]).filter(Boolean),
+        ]); // o de um teste interrompido, em qualquer idioma
         this.names.onlyBook = book.id; // sem consultar os catálogos do usuário (LDAP incluído)
         const rowOf = type => this.host.recipientRows().find(r => r.type == type);
         const to0 = rowOf("addr_to");
@@ -2574,6 +2622,8 @@ var FaixaComposeController = class {
 
   dispose() {
     this.disposed = true;
+    // Normalização do envio ainda pendente: o editor volta antes de o ouvinte do fim do envio sair.
+    this.revertSend();
     for (const d of this.disposers.splice(0)) {
       try {
         d();
@@ -2595,6 +2645,9 @@ var FaixaComposeController = class {
 /* -------------------------------------------------------------------------
  * API
  * ----------------------------------------------------------------------- */
+// Eventos guardados enquanto o background não escuta; acima disso, os mais antigos saem.
+var FAIXA_QUEUE_MAX = 50;
+
 var faixa = class extends ExtensionAPIPersistent {
   get emitter() {
     if (!this._emitter) {
@@ -2630,6 +2683,29 @@ var faixa = class extends ExtensionAPIPersistent {
       this._queue = [];
     }
     this._queue.push({ name, args, at: Date.now() });
+    // Fila limitada: sem background por muito tempo, os comandos mais antigos saem
+    // (o compose-ready fica: sem ele a janela não recebe o estado da mensagem).
+    while (this._queue.length > FAIXA_QUEUE_MAX) {
+      const i = this._queue.findIndex(q => q.name != "compose-ready");
+      this.dropQueued(this._queue.splice(i >= 0 ? i : 0, 1)[0]);
+    }
+  }
+
+  /** Evento da fila que não vai ser entregue: o comando que espera resposta fica sabendo. */
+  dropQueued(q) {
+    if (q.name != "command") {
+      return;
+    }
+    const [tabId, , args] = q.args;
+    if (!args || !args.reply) {
+      return;
+    }
+    try {
+      const controller = this.controllerForTab(tabId);
+      if (controller) {
+        controller.setMessageState({ _reply: args.reply, ok: false });
+      }
+    } catch (e) {}
   }
 
   listening(name, delta) {
@@ -2644,6 +2720,8 @@ var faixa = class extends ExtensionAPIPersistent {
       for (const q of due) {
         if (now - q.at < 60000) {
           Promise.resolve().then(() => this.emitter.emit(q.name, ...q.args));
+        } else {
+          this.dropQueued(q);
         }
       }
     }
@@ -2679,6 +2757,9 @@ var faixa = class extends ExtensionAPIPersistent {
           return null;
         })),
       ]);
+      if (this.shutDown) {
+        return; // desligado ou atualizado durante a leitura: nenhuma janela recebe a faixa
+      }
       this.baseDefinition = definition;
       this.overlays = Object.fromEntries(others.map((l, i) => [l, overlays[i]]).filter(([, o]) => o));
       this.setLocale();
@@ -2724,8 +2805,11 @@ var faixa = class extends ExtensionAPIPersistent {
   }
 
   onShutdown(isAppShutdown) {
+    // Um init() ainda lendo os arquivos vê isto e não registra o ouvinte de janelas.
+    this.shutDown = true;
     if (this.flagger) {
       this.flagger.unlisten();
+      this.flagger.cancelTimers();
     }
     if (isAppShutdown) {
       return;
@@ -2760,9 +2844,13 @@ var faixa = class extends ExtensionAPIPersistent {
     return true;
   }
 
-  applyConfig(config) {
+  /** provisional: mudança local (barras) antes da configuração do background chegar; a
+   * janela continua esperando por ela (assinatura padrão incluída). */
+  applyConfig(config, provisional = false) {
     this.config = Object.assign({}, FAIXA_DEFAULTS, config || {});
-    this.configured = true;
+    if (!provisional) {
+      this.configured = true;
+    }
     const relocalized = this.baseDefinition ? this.setLocale() : false;
     for (const controller of this.windows.values()) {
       try {
@@ -2777,7 +2865,7 @@ var faixa = class extends ExtensionAPIPersistent {
   }
 
   setMainToolbarVisible(visible) {
-    this.applyConfig(Object.assign({}, this.config, { ocultarBarraThunderbird: !visible }));
+    this.applyConfig(Object.assign({}, this.config, { ocultarBarraThunderbird: !visible }), !this.configured);
   }
 
   /** Sinalizar para Mim: a estrela entra quando a cópia enviada aparecer na pasta. */
@@ -2806,7 +2894,7 @@ var faixa = class extends ExtensionAPIPersistent {
 
   /** Barra de menus mostrada ou oculta pela faixa: em todas as janelas de composição. */
   setMenubarVisible(visible) {
-    this.applyConfig(Object.assign({}, this.config, { ocultarBarraMenus: !visible }));
+    this.applyConfig(Object.assign({}, this.config, { ocultarBarraMenus: !visible }), !this.configured);
   }
 
   /** Para a página Opções da Faixa: a barra de menus existe aqui (não no macOS) e o
@@ -2820,7 +2908,12 @@ var faixa = class extends ExtensionAPIPersistent {
   async listFonts() {
     if (!this.fontsPromise) {
       const enumerator = Cc["@mozilla.org/gfx/fontenumerator;1"].getService(Ci.nsIFontEnumerator);
-      this.fontsPromise = enumerator.EnumerateAllFontsAsync().then(list => [...new Set(list)].sort((a, b) => a.localeCompare(b, "pt-BR")));
+      const promise = enumerator.EnumerateAllFontsAsync().then(list => [...new Set(list)].sort((a, b) => a.localeCompare(b, "pt-BR")));
+      // Falhou: a próxima chamada tenta de novo.
+      this.fontsPromise = promise.catch(e => {
+        this.fontsPromise = null;
+        throw e;
+      });
     }
     return this.fontsPromise;
   }

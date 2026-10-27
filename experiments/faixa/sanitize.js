@@ -103,7 +103,9 @@ var FaixaSanitizer = {
       const n = name.toLowerCase();
       const v = String(value).trim();
       if (n == "href") {
-        if (tag == "a" && /^(https?:|mailto:|tel:)/i.test(v)) {
+        // Só o campo ({site}, {email}) também fica: FaixaSignatures.fill troca pelo valor
+        // e confere o endereço pronto na mesma lista de esquemas (inválido sai).
+        if (tag == "a" && (/^(https?:|mailto:|tel:)/i.test(v) || /^\{\s*[\p{L}-]{2,24}\s*\}$/u.test(v))) {
           el.setAttribute("href", v);
         }
         continue;
@@ -159,6 +161,12 @@ var FaixaSanitizer = {
   merge(html, win) {
     const inert = this.inertDocument(win);
     const src = this.clean(html, inert, win);
+    // Aqui não há campos a preencher: link que é só {campo} sai.
+    for (const a of src.querySelectorAll("a[href]")) {
+      if (!/^(https?:|mailto:|tel:)/i.test(a.getAttribute("href"))) {
+        a.removeAttribute("href");
+      }
+    }
     const out = inert.createElement("div");
     const scratch = inert.createElement("span");
     const BLOCK = /^(p|div|h[1-6]|blockquote|address|center|pre|dd|dt|dl|caption)$/;

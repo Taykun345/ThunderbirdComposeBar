@@ -184,24 +184,47 @@ var FaixaSignatures = class {
       const id = FaixaSignatures.fieldOf(name);
       return id == null ? null : vars[id] || "";
     };
-    // Atributos: link (mailto:{email}), título e texto alternativo.
+    // Atributos: link (mailto:{email}, {site}), título e texto alternativo.
     for (const el of root.querySelectorAll("[href], [title], [alt]")) {
       for (const attr of ["href", "title", "alt"]) {
         const v = el.getAttribute(attr);
         if (!v || !v.includes("{")) {
           continue;
         }
-        const out = v.replace(TOKEN, (m, name) => {
-          const value = valueOf(name);
-          if (value == null) {
-            return m;
+        let out;
+        const whole = attr == "href" && v.trim().match(/^\{\s*([\p{L}-]{2,24})\s*\}$/u);
+        if (whole) {
+          // Link que é só o campo ({site}, {email}): o valor ganha o esquema que faltar.
+          const id = FaixaSignatures.fieldOf(whole[1]);
+          const value = id == null ? "" : String(vars[id] || "").trim();
+          if (!value || /^[a-z][a-z0-9+.-]*:(?!\d)/i.test(value)) {
+            out = value;
+          } else if (id == "email") {
+            out = "mailto:" + value;
+          } else if (id == "telefone" || id == "celular") {
+            out = "tel:" + value.replace(/[^\d+]/g, "");
+          } else {
+            out = "https://" + value;
           }
-          return attr == "href" && /^tel:/i.test(v) ? value.replace(/[^\d+]/g, "") : value;
-        });
-        if (attr == "href" && (!/^(https?:|mailto:|tel:)/i.test(out.trim()) || /^(mailto:|tel:)\s*$/i.test(out.trim()))) {
+        } else {
+          out = v.replace(TOKEN, (m, name, at, all) => {
+            const value = valueOf(name);
+            if (value == null) {
+              return m;
+            }
+            if (attr == "href" && /^tel:/i.test(v)) {
+              return value.replace(/[^\d+]/g, "");
+            }
+            // https://{site} com o site já em https://...: sem esquema repetido.
+            return attr == "href" && /^\s*https?:\/\/$/i.test(all.slice(0, at)) ? value.replace(/^\s*https?:\/\//i, "") : value;
+          });
+        }
+        // Depois de preencher, o link passa de novo pela lista de esquemas aceitos.
+        const u = out.trim();
+        if (attr == "href" && (!/^(https?:\/\/[^\s\/?#]|mailto:|tel:)/i.test(u) || /^(mailto:|tel:)\s*$/i.test(u))) {
           el.removeAttribute("href"); // mailto: vazio ou endereço que deixou de valer
         } else {
-          el.setAttribute(attr, out);
+          el.setAttribute(attr, attr == "href" ? u : out);
         }
       }
     }

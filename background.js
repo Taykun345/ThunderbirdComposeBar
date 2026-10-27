@@ -27,9 +27,16 @@ async function messageState(tabId) {
   };
 }
 
+/** Alta e Baixa Prioridade acendem também com a prioridade 2 e 4 (high, low) que veio de
+ * outro programa: só para os botões, a prioridade da mensagem não muda. */
+function buttonState(state) {
+  const shown = { high: "highest", low: "lowest" }[state.priority];
+  return shown ? Object.assign({}, state, { priority: shown }) : state;
+}
+
 async function pushMessageState(tabId) {
   try {
-    await browser.faixa.setMessageState(tabId, await messageState(tabId));
+    await browser.faixa.setMessageState(tabId, buttonState(await messageState(tabId)));
   } catch (e) {
     console.warn("[Faixa] estado da mensagem", tabId, e);
   }
@@ -106,21 +113,33 @@ async function onCommand(tabId, command, args = {}) {
         return;
       }
       case "saveQuickPart": {
+        // A faixa só avisa que a Parte Rápida está na galeria quando recebe esta resposta.
+        const reply = ok => args.reply
+          ? browser.faixa.setMessageState(tabId, { _reply: args.reply, ok }).catch(e => console.warn("[Faixa] resposta", e))
+          : null;
         const nome = String(args.nome || "").trim();
         const html = String(args.html || "");
         if (!nome || !html) {
+          await reply(false);
           return;
         }
-        await withLock(QUICK_PARTS_KEY, async () => {
-          const list = await readQuickParts();
-          const i = args.id ? list.findIndex(p => p.id == args.id) : -1;
-          if (i >= 0) {
-            list[i] = Object.assign({}, list[i], { nome, html });
-          } else {
-            list.push({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), nome, html });
-          }
-          await saveQuickParts(list);
-        });
+        try {
+          await withLock(QUICK_PARTS_KEY, async () => {
+            const list = await readQuickParts();
+            const i = args.id ? list.findIndex(p => p.id == args.id) : -1;
+            if (i >= 0) {
+              list[i] = Object.assign({}, list[i], { nome, html });
+            } else {
+              list.push({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), nome, html });
+            }
+            await saveQuickParts(list);
+          });
+        } catch (e) {
+          console.error("[Faixa] Parte Rápida", e);
+          await reply(false);
+          return;
+        }
+        await reply(true);
         return;
       }
       case "setTbToolbar":
@@ -137,12 +156,13 @@ async function onCommand(tabId, command, args = {}) {
         return;
       case "priorityHigh": {
         const { priority } = await messageState(tabId);
-        await browser.compose.setComposeDetails(tabId, { priority: priority == "highest" ? "normal" : "highest" });
+        // high (X-Priority 2) também conta como ligada: o clique volta ao normal.
+        await browser.compose.setComposeDetails(tabId, { priority: ["highest", "high"].includes(priority) ? "normal" : "highest" });
         break;
       }
       case "priorityLow": {
         const { priority } = await messageState(tabId);
-        await browser.compose.setComposeDetails(tabId, { priority: priority == "lowest" ? "normal" : "lowest" });
+        await browser.compose.setComposeDetails(tabId, { priority: ["lowest", "low"].includes(priority) ? "normal" : "lowest" });
         break;
       }
       case "formatHTML":
