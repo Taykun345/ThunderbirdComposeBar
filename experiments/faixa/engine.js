@@ -718,7 +718,10 @@ var FaixaEngine = class {
     do {
       if (FAIXA_BLOCK_TAGS.has(el.localName) && el.localName != "body" && range.intersectsNode(el)) {
         // Fim do intervalo no começo de um bloco (clique triplo): esse bloco não conta.
-        if (el != first && range.endContainer && this.textOffset(el, range.endContainer, range.endOffset) == 0 && !el.contains(range.startContainer)) {
+        // O texto só é medido quando pode dar zero: o fim dentro do bloco, ou um bloco
+        // sem texto antes dele (medir todos deixava seleções grandes lentas).
+        if (el != first && range.endContainer && !el.contains(range.startContainer) &&
+          (el.contains(range.endContainer) || !el.textContent) && this.textOffset(el, range.endContainer, range.endOffset) == 0) {
           continue;
         }
         found.push(el);
@@ -1081,7 +1084,8 @@ var FaixaEngine = class {
 
   /** Parágrafos que recebem bordas (fora de listas, tabelas, citação e assinatura). */
   borderBlocks() {
-    return this.ownParagraphBlocks();
+    // Um <p> dentro de célula ou item também é parágrafo (isParagraph), mas não leva borda.
+    return this.ownParagraphBlocks().filter(b => !(b.parentElement && b.parentElement.closest("td, th, li, table, ol, ul")));
   }
 
   /** Bordas que o grupo de parágrafos tem, como o menu Bordas do Word mostra: em cima do
@@ -1361,24 +1365,26 @@ var FaixaEngine = class {
     const { units, parent } = target;
     const locale = FaixaI18n.locale;
     const collator = new Intl.Collator(locale, { sensitivity: "base" });
-    const items = units.map(u => {
-      const text = this.sortText(u);
-      const value = type == "number" ? this.sortNumber(text) : type == "date" ? this.sortDate(text) : text;
-      return { u, empty: !text, value };
-    });
     const dir = order == "desc" ? -1 : 1;
-    const full = items.filter(x => !x.empty);
-    const sorted = full.slice().sort((a, b) => {
-      if (type == "text") {
-        return dir * collator.compare(a.value, b.value);
-      }
-      if (a.value == null || b.value == null) {
-        return (a.value == null) - (b.value == null);
-      }
-      return dir * (a.value - b.value);
-    });
-    let k = 0;
-    const final = items.map(x => (x.empty ? x.u : sorted[k++].u));
+    const orderOf = run => {
+      const items = run.map(u => {
+        const text = this.sortText(u);
+        const value = type == "number" ? this.sortNumber(text) : type == "date" ? this.sortDate(text) : text;
+        return { u, empty: !text, value };
+      });
+      const full = items.filter(x => !x.empty);
+      const sorted = full.slice().sort((a, b) => {
+        if (type == "text") {
+          return dir * collator.compare(a.value, b.value);
+        }
+        if (a.value == null || b.value == null) {
+          return (a.value == null) - (b.value == null);
+        }
+        return dir * (a.value - b.value);
+      });
+      let k = 0;
+      return items.map(x => (x.empty ? x.u : sorted[k++].u));
+    };
     const skip = n => {
       while (n && ((n.nodeType == 3 && !/[^ \t\n\r\f]/.test(n.data)) || n.nodeType == 8)) {
         n = n.nextSibling;
@@ -1396,11 +1402,27 @@ var FaixaEngine = class {
     };
     const groups = new Map(units.map(u => [u, group(u)]));
     const tail = u => groups.get(u)[groups.get(u).length - 1];
+    // Só trechos seguidos se ordenam entre si: o que fica no meio (uma citação, uma tabela)
+    // não sai do lugar, e cada trecho é classificado sozinho.
+    const runs = [];
+    for (const u of units) {
+      const prev = runs[runs.length - 1];
+      if (prev && skip(tail(prev[prev.length - 1]).nextSibling) === u) {
+        prev.push(u);
+      } else {
+        runs.push([u]);
+      }
+    }
+    const finals = runs.map(orderOf);
     const sel = this.doc.getSelection();
     this.tx(() => {
-      if (!final.every((u, i) => u == units[i])) {
-        const ed = this.editor;
-        let ref = tail(units[units.length - 1]).nextSibling;
+      const ed = this.editor;
+      runs.forEach((run, j) => {
+        const final = finals[j];
+        if (final.every((u, i) => u == run[i])) {
+          return;
+        }
+        let ref = tail(run[run.length - 1]).nextSibling;
         for (let i = final.length - 1; i >= 0; i--) {
           const u = final[i];
           if (skip(tail(u).nextSibling) !== skip(ref)) {
@@ -1411,10 +1433,11 @@ var FaixaEngine = class {
           }
           ref = u;
         }
-      }
-      const last = tail(final[final.length - 1]);
+      });
+      const lastFinal = finals[finals.length - 1];
+      const last = tail(lastFinal[lastFinal.length - 1]);
       const r = this.doc.createRange();
-      r.setStart(final[0], 0);
+      r.setStart(finals[0][0], 0);
       r.setEnd(last, last.childNodes.length);
       sel.removeAllRanges();
       sel.addRange(r);
@@ -1757,8 +1780,27 @@ var FaixaEngine = class {
         }
       }
       if (recolor.size) {
+        // A cor é da ênfase quando o elemento está nela ou só embrulha ênfase (o Gecko às
+        // vezes põe o span da cor por fora do <em>). Cor escolhida à mão em volta de um
+        // texto que só tem uma ênfase no meio fica.
+        const onlyEm = el => {
+          const walker = this.doc.createTreeWalker(el, 4 /* SHOW_TEXT */);
+          let n;
+          let any = false;
+          while ((n = walker.nextNode())) {
+            if (!/[^\s\u200B]/.test(n.data)) {
+              continue;
+            }
+            const em = n.parentElement && n.parentElement.closest("em");
+            if (!em || !el.contains(em)) {
+              return false;
+            }
+            any = true;
+          }
+          return any;
+        };
         for (const el of [...body.querySelectorAll("[style*='color'], font[color]")]) {
-          if (el.closest(FAIXA_FOREIGN) || !(el.closest("em") || el.querySelector("em"))) {
+          if (el.closest(FAIXA_FOREIGN) || !(el.closest("em") || onlyEm(el))) {
             continue;
           }
           const inline = el.style && el.style.color;
@@ -2000,6 +2042,14 @@ var FaixaEngine = class {
       case "shading": {
         // Sombreamento: o fundo dos parágrafos, como o clique (setShading), ou do texto, como o realce.
         if (this.shadingTarget() == "paragraph") {
+          // Antes de juntar os blocos: contar é barato, medir uma seleção enorme não. A conta
+          // pega também os contêineres (body, td em volta do p), por isso a folga; o limite
+          // de verdade é o dos blocos logo abaixo.
+          for (let i = 0; i < ((sel && sel.rangeCount) || 1); i++) {
+            if (!this.fewBlocks(sel ? sel.getRangeAt(i) : range, FAIXA_PREVIEW_MAX_BLOCKS * 4)) {
+              return null;
+            }
+          }
           const blocks = this.ownParagraphBlocks({ cells: true, items: true }).filter(b => b.isConnected && !b.closest('[contenteditable="false"]'));
           return blocks.length && blocks.length <= FAIXA_PREVIEW_MAX_BLOCKS ? { blocks, props: { "background-color": args.value || "transparent" } } : null;
         }
@@ -2549,12 +2599,27 @@ var FaixaEngine = class {
       if (!sel.rangeCount || sel.isCollapsed) {
         return;
       }
-      const range = sel.getRangeAt(0);
-      let segs = this.textSegments(range);
-      const own = segs.filter(s => !(s.node.parentElement && s.node.parentElement.closest(FAIXA_FOREIGN)));
-      if (own.length) {
-        segs = own;
+      const foreign = s => !!(s.node.parentElement && s.node.parentElement.closest(FAIXA_FOREIGN));
+      const ownSegs = range => {
+        const segs = this.textSegments(range);
+        const own = segs.filter(s => !foreign(s));
+        return own.length ? own : segs;
+      };
+      if (sel.rangeCount > 1) {
+        // Vale a seleção inteira: com texto do autor em algum trecho, a citação e a
+        // assinatura ficam de fora em todos (um trecho só na citação não muda).
+        let anyOwn = false;
+        for (let i = 0; i < sel.rangeCount && !anyOwn; i++) {
+          anyOwn = this.textSegments(sel.getRangeAt(i)).some(s => !foreign(s));
+        }
+        this.changeCaseRanges(sel, mode, range => {
+          const segs = this.textSegments(range);
+          return anyOwn ? segs.filter(s => !foreign(s)) : segs;
+        });
+        return;
       }
+      const range = sel.getRangeAt(0);
+      const segs = ownSegs(range);
       if (!segs.length) {
         return;
       }
@@ -2579,6 +2644,87 @@ var FaixaEngine = class {
     });
   }
 
+  /** Maiúsculas e minúsculas em vários trechos de seleção (Selecionar Texto com Formatação
+   * Semelhante): cada trecho como uma seleção própria. Cada nó de texto é trocado uma vez só,
+   * e os trechos continuam selecionados. Roda dentro de tx(). */
+  changeCaseRanges(sel, mode, ownSegs) {
+    const ranges = [];
+    for (let i = 0; i < sel.rangeCount; i++) {
+      const r = sel.getRangeAt(i);
+      if (!r.collapsed) {
+        ranges.push(r);
+      }
+    }
+    // Os pontos guardados como valores: um intervalo vivo pularia para o pai do nó trocado.
+    const points = ranges.map(r => [r.startContainer, r.startOffset, r.endContainer, r.endOffset]);
+    // O texto novo de todos os trechos sai antes de mexer em qualquer nó.
+    const byNode = new Map();
+    for (const r of ranges) {
+      const segs = ownSegs(r);
+      if (!segs.length) {
+        continue;
+      }
+      const out = this.caseOf(segs, mode);
+      segs.forEach((s, i) => {
+        if (!byNode.has(s.node)) {
+          byNode.set(s.node, []);
+        }
+        byNode.get(s.node).push({ start: s.start, end: s.end, text: out[i] });
+      });
+    }
+    // Novo deslocamento de cada ponto de um nó trocado (ß vira SS e muda o tamanho).
+    const moved = new Map();
+    for (const [node, parts] of byNode) {
+      parts.sort((a, b) => a.start - b.start);
+      const data = node.data;
+      let next = "";
+      let at = 0;
+      const map = [];
+      for (const part of parts) {
+        if (part.start < at) {
+          continue; // trechos sobrepostos: o primeiro vale
+        }
+        next += data.slice(at, part.start);
+        map.push([part.start, next.length]);
+        next += part.text;
+        map.push([part.end, next.length]);
+        at = part.end;
+      }
+      next += data.slice(at);
+      if (next == data) {
+        continue;
+      }
+      const shift = off => {
+        let best = [0, 0];
+        for (const m of map) {
+          if (m[0] <= off) {
+            best = m;
+          }
+        }
+        return off - best[0] + best[1];
+      };
+      moved.set(node, { fresh: this.replaceTextNode(node, next), shift });
+    }
+    if (!moved.size) {
+      return;
+    }
+    const point = (node, offset) => {
+      const m = moved.get(node);
+      return m ? [m.fresh, Math.min(m.shift(offset), m.fresh.length)] : [node, offset];
+    };
+    sel.removeAllRanges();
+    for (const [sc, so, ec, eo] of points) {
+      const nr = this.doc.createRange();
+      try {
+        nr.setStart(...point(sc, so));
+        nr.setEnd(...point(ec, eo));
+      } catch (e) {
+        continue;
+      }
+      sel.addRange(nr);
+    }
+  }
+
   /** Trechos de texto (nó, início, fim) cobertos pelo intervalo, em ordem.
    * lineBefore: há uma quebra de linha (<br>) entre este trecho e o anterior. */
   textSegments(range, limit = Infinity) {
@@ -2590,6 +2736,9 @@ var FaixaEngine = class {
     while ((n = walker.nextNode())) {
       if (!range.intersectsNode(n)) {
         continue;
+      }
+      if (n.nodeType == 3 && n.parentElement && n.parentElement.closest("style, script")) {
+        continue; // código, não texto da mensagem
       }
       if (n.nodeType == 1) {
         if (n.localName == "br") {
@@ -3190,23 +3339,34 @@ var FaixaEngine = class {
         restore = this.expandToWord();
       }
       if (!sel.isCollapsed) {
-        const whole = sel.getRangeAt(0).cloneRange();
+        // Todos os trechos da seleção (Selecionar Texto com Formatação Semelhante deixa vários).
+        const wholes = [];
+        for (let i = 0; i < sel.rangeCount; i++) {
+          wholes.push(sel.getRangeAt(i).cloneRange());
+        }
         // Um sub-intervalo por bloco: cada parágrafo tem sua formatação de base.
         // Arrastar sobre o texto do autor e a citação pinta só o texto do autor.
-        const all = this.blocksInSelection();
-        const mine = all.filter(b => !b.closest(FAIXA_FOREIGN));
+        // Vale a seleção inteira: com texto do autor em algum trecho, nenhum trecho pinta a citação.
+        const blocksOf = wholes.map(whole => (whole.collapsed ? [] : this.blocksInRange(whole)));
+        const anyMine = blocksOf.some(all => all.some(b => !b.closest(FAIXA_FOREIGN)));
         const parts = [];
-        for (const block of mine.length ? mine : all) {
-          const r = doc.createRange();
-          r.selectNodeContents(block);
-          if (whole.compareBoundaryPoints(0, r) > 0) {
-            r.setStart(whole.startContainer, whole.startOffset);
+        for (const [i, whole] of wholes.entries()) {
+          if (whole.collapsed) {
+            continue;
           }
-          if (whole.compareBoundaryPoints(2, r) < 0) {
-            r.setEnd(whole.endContainer, whole.endOffset);
-          }
-          if (!r.collapsed && r.toString().replace(/[\s​]/g, "").length) {
-            parts.push(r);
+          const all = blocksOf[i];
+          for (const block of anyMine ? all.filter(b => !b.closest(FAIXA_FOREIGN)) : all) {
+            const r = doc.createRange();
+            r.selectNodeContents(block);
+            if (whole.compareBoundaryPoints(0, r) > 0) {
+              r.setStart(whole.startContainer, whole.startOffset);
+            }
+            if (whole.compareBoundaryPoints(2, r) < 0) {
+              r.setEnd(whole.endContainer, whole.endOffset);
+            }
+            if (!r.collapsed && r.toString().replace(/[\s​]/g, "").length) {
+              parts.push(r);
+            }
           }
         }
         for (const r of parts) {
@@ -3215,10 +3375,12 @@ var FaixaEngine = class {
           this.applyCharFormat(fmt.char);
         }
         sel.removeAllRanges();
-        const again = doc.createRange();
-        again.setStart(whole.startContainer, whole.startOffset);
-        again.setEnd(whole.endContainer, whole.endOffset);
-        sel.addRange(again);
+        for (const whole of wholes) {
+          const again = doc.createRange();
+          again.setStart(whole.startContainer, whole.startOffset);
+          again.setEnd(whole.endContainer, whole.endOffset);
+          sel.addRange(again);
+        }
       }
       if (fmt.para) {
         this.applyParaFormat(fmt.para);
@@ -3364,9 +3526,10 @@ var FaixaEngine = class {
         result.changed++;
       }
     }
-    // 2. <font> que só tem style (vindo do tamanho em pt) sai como <span>.
+    // 2. <font> que só tem style (vindo do tamanho em pt) sai como <span>. Citação,
+    // encaminhada e assinatura saem como vieram.
     for (const font of [...body.querySelectorAll("font")]) {
-      if (![...font.attributes].every(a => a.name == "style")) {
+      if (font.closest(FAIXA_FOREIGN) || ![...font.attributes].every(a => a.name == "style")) {
         continue;
       }
       const span = doc.createElement("span");
