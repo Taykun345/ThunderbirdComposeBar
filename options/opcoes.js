@@ -175,8 +175,10 @@ function save(patch, message) {
     try {
       await saveUser(patch);
       flash(message || t("opt.saved", "Salvo. Já vale nas mensagens abertas."));
+      return true;
     } catch (e) {
       flash(t("opt.saveFailed", "Não foi possível salvar: {error}", { error: (e && e.message) || e }));
+      return false;
     }
   });
   return saving;
@@ -184,9 +186,10 @@ function save(patch, message) {
 
 function bind() {
   $("idioma").addEventListener("change", async e => {
-    await save({ idioma: e.target.value });
-    // A página muda de idioma junto com a faixa.
-    location.reload();
+    // A página muda de idioma junto com a faixa; se não gravou, o aviso de erro fica.
+    if (await save({ idioma: e.target.value })) {
+      location.reload();
+    }
   });
   $("abaInicial").addEventListener("change", e => save({ abaInicial: e.target.value }, t("opt.saved.next", "Salvo. Vale nas próximas mensagens.")));
   $("recolhida").addEventListener("change", e => save({ recolhida: e.target.checked }, t("opt.saved.next", "Salvo. Vale nas próximas mensagens.")));
@@ -226,7 +229,12 @@ function bind() {
       return;
     }
     await saving;
-    await resetUser();
+    try {
+      await resetUser();
+    } catch (e) {
+      flash(t("opt.saveFailed", "Não foi possível salvar: {error}", { error: (e && e.message) || e }));
+      return;
+    }
     location.reload();
   });
   // Mudança feita em outro lugar (faixa recolhida numa mensagem, barra do Thunderbird).

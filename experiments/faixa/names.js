@@ -175,7 +175,15 @@ var FaixaNames = class {
             }
           }
           if (address) {
-            this.host.replacePill(pill.el, address);
+            // Endereço que já é pílula na linha: a vermelha só sai, sem repetir o destinatário.
+            const [a] = this.parseField(address);
+            const key = FaixaNames.norm(a ? a.email || a.text : address);
+            const others = this.host.recipientRows().find(x => x.type == row.type).pills.filter(p => p.el != pill.el);
+            if (others.some(p => FaixaNames.norm(p.email || p.text) == key)) {
+              this.host.removePill(pill.el);
+            } else {
+              this.host.replacePill(pill.el, address);
+            }
             report.resolved++;
           } else if (r.status == "none") {
             report.unresolved.push(text);
@@ -198,7 +206,9 @@ var FaixaNames = class {
             const pick = await this.choose(tok, r.matches);
             if (pick == "more") {
               const added = await this.selectNames({ text: tok, target: row.type });
-              if (!added) {
+              if (added) {
+                report.resolved++; // escolhido no Catálogo de Endereços
+              } else {
                 keep.push(tok);
               }
             } else if (pick) {

@@ -7,7 +7,7 @@
 
 "use strict";
 
-/* global FaixaI18n */
+/* global FaixaI18n, Services */
 
 var FaixaDialog = class {
   /**
@@ -543,15 +543,51 @@ var FaixaDialogs = {
       { id: "time", text: time },
       { id: "timeSeconds", text: f({ timeStyle: "medium" }) },
     ];
-    const seen = new Set();
-    return list.filter(x => x.text && !seen.has(x.text) && seen.add(x.text));
+    // Texto repetido aparece uma vez só; ids guarda os formatos que ele representa (o
+    // formato lembrado continua escolhido mesmo quando coincide com outro neste idioma).
+    const byText = new Map();
+    for (const x of list) {
+      if (!x.text) {
+        continue;
+      }
+      if (byText.has(x.text)) {
+        byText.get(x.text).ids.push(x.id);
+      } else {
+        byText.set(x.text, Object.assign(x, { ids: [x.id] }));
+      }
+    }
+    return [...byText.values()];
+  },
+
+  /* Último formato e idioma de Data e Hora: na preferência, para valer depois de reiniciar
+   * o Thunderbird (sem Services, como na bancada de testes, só na memória). */
+  DATE_PREF: "extensions.faixa.dataHora",
+
+  readLastDate() {
+    if (FaixaDialogs.lastDate) {
+      return FaixaDialogs.lastDate;
+    }
+    try {
+      const v = JSON.parse(Services.prefs.getStringPref(FaixaDialogs.DATE_PREF, "null"));
+      if (v && typeof v.id == "string" && typeof v.locale == "string") {
+        return (FaixaDialogs.lastDate = { id: v.id, locale: v.locale });
+      }
+    } catch (e) {}
+    return null;
+  },
+
+  saveLastDate(last) {
+    FaixaDialogs.lastDate = last;
+    try {
+      Services.prefs.setStringPref(FaixaDialogs.DATE_PREF, JSON.stringify(last));
+    } catch (e) {}
   },
 
   /** Data e Hora: a lista de formatos da data e hora de agora, com o idioma. Devolve o
    * texto escolhido ou null. O último formato e idioma escolhidos voltam na próxima vez. */
   dateTime(ui, { now = new Date(), locale = FaixaI18n.locale } = {}) {
     const t = FaixaI18n.t.bind(FaixaI18n);
-    const last = FaixaDialogs.lastDate || { id: "numeric", locale };
+    const last = FaixaDialogs.readLastDate() || { id: "numeric", locale };
     const dlg = new FaixaDialog(ui, {
       title: t("date.title", "Data e Hora"),
       cls: "fx-ddate",
@@ -561,10 +597,12 @@ var FaixaDialogs = {
           ...FaixaI18n.LOCALES.map(l => h("option", { value: l, lang: l, text: FaixaI18n.NAMES[l] })));
         lang.value = FaixaI18n.LOCALES.includes(last.locale) ? last.locale : "pt-BR";
         const list = new FaixaPeopleList(ui, { label: t("date.formats", "Formatos disponíveis"), rowCls: "fx-1col", cells: it => [{ text: it.text }], onActivate: () => ok() });
+        // O formato pelo id: o lembrado, se o item escolhido o representa, senão o do item.
+        const idOf = item => (item.ids.includes(last.id) ? last.id : item.id);
         const fill = keepId => {
           const items = FaixaDialogs.dateFormats(now, lang.value);
           list.setItems(items);
-          const i = Math.max(0, items.findIndex(x => x.id == keepId));
+          const i = Math.max(0, items.findIndex(x => x.ids.includes(keepId)));
           if (items.length) {
             list.select(i, {});
           }
@@ -572,13 +610,13 @@ var FaixaDialogs = {
         const ok = () => {
           const [item] = list.selectedItems();
           if (item) {
-            FaixaDialogs.lastDate = { id: item.id, locale: lang.value };
+            FaixaDialogs.saveLastDate({ id: idOf(item), locale: lang.value });
             d.close(item.text);
           }
         };
         lang.addEventListener("change", () => {
           const [cur] = list.selectedItems();
-          fill(cur ? cur.id : last.id);
+          fill(cur ? idOf(cur) : last.id);
         });
         d.body.append(h("div", { class: "fx-dlabel", text: t("date.formats", "Formatos disponíveis") }), list.el,
           h("div", { class: "fx-drow" }, h("label", { class: "fx-dlabel", text: t("date.lang", "Idioma") }), lang));
@@ -660,8 +698,9 @@ var FaixaDialogs = {
           const my = ++seq;
           note.textContent = t("msg.loading", "Lendo as mensagens…");
           let r = { items: [] };
+          const query = search.value.trim();
           try {
-            r = (await o.list(folder.value, search.value.trim())) || { items: [] };
+            r = (await o.list(folder.value, query)) || { items: [] };
           } catch (e) {
             r = { items: [], error: String((e && e.message) || e) };
           }
@@ -669,12 +708,19 @@ var FaixaDialogs = {
             return;
           }
           const items = r.items || [];
+          // Pesquisa que parou no limite: o aviso diz que nem tudo foi olhado (pesquisar de
+          // novo não ajuda a chegar às mais antigas).
+          const searched = !!query && r.capped;
           list.setItems(items);
           const pre = items.map((m, i) => (preselect.has(m.id) ? i : -1)).filter(i => i >= 0);
           preselect = new Set();
           pre.forEach((i, k) => list.select(i, { toggle: k > 0 }));
           note.textContent = r.error
             ? t("msg.error", "Não foi possível ler esta pasta. Abra-a na janela principal do Thunderbird e tente de novo.")
+            : searched
+              ? !items.length
+                ? t("msg.searchCappedNone", "Nenhuma mensagem encontrada entre as mais recentes. As mais antigas da pasta não foram pesquisadas.")
+                : t("msg.searchCapped", "Mostrando os {n} resultados mais recentes. Mensagens mais antigas da pasta podem ter ficado de fora da pesquisa.", { n: items.length })
             : !items.length
               ? t("msg.none", "Nenhuma mensagem.")
               : r.capped

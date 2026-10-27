@@ -281,25 +281,29 @@ function withLocal(stored, tooBig = null) {
 /** O que a lista mostra (ids e nomes): muda quando outra janela cria ou exclui. */
 const listKey = () => JSON.stringify(all().map(s => [s.id, s.nome]));
 
+/** Ler, aplicar e gravar sem ninguém gravar no meio (o background, outra aba). */
+function writeMerged(tooBig) {
+  return withLock(M.key, async () => {
+    let stored;
+    try {
+      stored = plainSigs(await M.read());
+    } catch (e) {
+      stored = JSON.parse(state.savedSigs || "[]"); // a última lista conhecida
+    }
+    const merged = withLocal(stored, tooBig);
+    state.savedSigs = JSON.stringify(merged);
+    await M.write(merged);
+    return merged;
+  });
+}
+
 function saveSigs() {
   clearTimeout(saveSigs.timer);
   saveSigs.timer = 0;
   return persist(async () => {
     const tooBig = [];
     const before = listKey();
-    // Ler, aplicar e gravar sem ninguém gravar no meio (o background, outra aba).
-    const list = await withLock(M.key, async () => {
-      let stored;
-      try {
-        stored = plainSigs(await M.read());
-      } catch (e) {
-        stored = JSON.parse(state.savedSigs || "[]"); // a última lista conhecida
-      }
-      const merged = withLocal(stored, tooBig);
-      state.savedSigs = JSON.stringify(merged);
-      await M.write(merged);
-      return merged;
-    });
+    const list = await writeMerged(tooBig);
     // Gravado deixa de ser pendente; o que mudou durante a gravação (ou não coube) continua.
     for (const id of [...state.dirty]) {
       const now = state.own.find(x => x.id == id);
@@ -331,11 +335,60 @@ function saveSigsSoon() {
   saveSigs.timer = setTimeout(saveSigs, 600);
 }
 
+/** O que mudou nos padrões desde a última gravação desta página: [conta, campo, valor],
+ * valor undefined = campo removido (a conta volta a seguir o Thunderbird nele). */
+function defaultChanges(base, now) {
+  const out = [];
+  for (const k of new Set([...Object.keys(base), ...Object.keys(now)])) {
+    const b = base[k] || {};
+    const n = now[k] || {};
+    for (const which of new Set([...Object.keys(b), ...Object.keys(n)])) {
+      if (JSON.stringify(b[which]) !== JSON.stringify(n[which])) {
+        out.push([k, which, which in n ? n[which] : undefined]);
+      }
+    }
+  }
+  return out;
+}
+
+/** Grava só as contas e campos mudados aqui, por cima do que estiver guardado (outra
+ * janela pode ter mudado outra conta no meio). null = nenhuma; sem o campo = do Thunderbird. */
 function saveDefaults() {
   const d = normKeys(state.defaults);
+  const changes = defaultChanges(JSON.parse(state.savedDefaults || "{}"), d);
   state.savedDefaults = JSON.stringify(d);
   state.defaultsPending++;
-  return persist(() => saveSignatures({ assinaturaPadrao: d })).finally(() => {
+  return persist(() => withLock("assinaturaPadrao", async () => {
+    let stored;
+    try {
+      stored = normKeys((await readSignatures()).assinaturaPadrao);
+    } catch (e) {
+      stored = JSON.parse(state.savedDefaults || "{}"); // os últimos conhecidos
+    }
+    for (const [k, which, v] of changes) {
+      const entry = Object.assign({}, stored[k]);
+      if (v === undefined) {
+        delete entry[which];
+      } else {
+        entry[which] = v;
+      }
+      if (Object.keys(entry).length) {
+        stored[k] = entry;
+      } else {
+        delete stored[k];
+      }
+    }
+    if (state.defaultsPending == 1) {
+      // Última da fila: a página passa a mostrar também o que veio de fora.
+      const fresh = JSON.stringify(normKeys(state.defaults)) == JSON.stringify(d);
+      state.savedDefaults = JSON.stringify(stored);
+      if (fresh && JSON.stringify(stored) != JSON.stringify(d)) {
+        state.defaults = normKeys(stored);
+        renderDefaults();
+      }
+    }
+    await saveSignatures({ assinaturaPadrao: stored });
+  })).finally(() => {
     state.defaultsPending--;
   });
 }
@@ -763,6 +816,11 @@ function normalizeLink(v) {
   if (/^(https?:\/\/|mailto:|tel:)\S/i.test(s)) {
     return s;
   }
+  // Só um campo ({site}, {email}): preenchido na mensagem, que confere o endereço pronto.
+  const field = s.match(/^\{\s*([\p{L}-]{2,24})\s*\}$/u);
+  if (field && FaixaSignatures.fieldOf(field[1])) {
+    return s;
+  }
   if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(s)) {
     return "mailto:" + s;
   }
@@ -901,9 +959,10 @@ async function insertImageFile(file) {
 }
 
 /** Colar: o HTML passa pela limpeza; parágrafo sem margem própria fica sem margem,
- * como no Word e no Outlook (o padrão do navegador daria uma linha a mais). */
-function pastedHTML(html) {
-  const frag = FaixaSanitizer.clean(html, document);
+ * como no Word e no Outlook (o padrão do navegador daria uma linha a mais). Imagem data:
+ * colada é reduzida como as que entram pelo editor (M.img). */
+async function pastedHTML(html) {
+  const frag = await shrinkImages(FaixaSanitizer.clean(html, document));
   for (const n of frag.querySelectorAll("[style]")) {
     const kept = n.getAttribute("style").split(";").map(x => x.trim()).filter(x => x && !/^mso-/i.test(x));
     if (kept.length) {
@@ -1217,8 +1276,21 @@ function bind() {
     const html = dt.getData("text/html");
     if (html) {
       e.preventDefault();
-      document.execCommand("insertHTML", false, pastedHTML(html));
-      changed();
+      const sel = document.getSelection();
+      const at = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      pastedHTML(html).then(out => {
+        if (state.selected != s.id) {
+          return; // trocou de item enquanto as imagens eram reduzidas
+        }
+        // Volta ao ponto da colagem (a redução das imagens é assíncrona).
+        if (at && ed.contains(at.startContainer)) {
+          state.range = at;
+          sel.removeAllRanges();
+        }
+        restoreSelection();
+        document.execCommand("insertHTML", false, out);
+        changed();
+      }).catch(err => flash(t("sig.img.failed", "Não foi possível usar a imagem: {error}", { error: (err && err.message) || err })));
     }
   });
   ed.addEventListener("drop", e => {
@@ -1301,7 +1373,7 @@ function bind() {
   // Saindo da página com texto ainda por gravar: grava já, sem esperar a fila (depois da
   // saída, uma continuação pendente não roda mais).
   // A lista que a página conhece já tem o que as outras janelas gravaram (aviso de
-  // mudança); aqui não dá para ler antes.
+  // mudança); aqui não dá para ler antes, nem esperar a trava: a gravação tem de sair já.
   window.addEventListener("pagehide", () => {
     if (saveSigs.timer) {
       clearTimeout(saveSigs.timer);

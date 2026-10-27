@@ -113,9 +113,15 @@ function describeKey(e) {
   const side = state.keyState.leftAlt ? t("diag.altLeft", "da esquerda") : state.keyState.rightAlt ? t("diag.altRight", "da direita") : t("diag.none", "nenhum");
   let result;
   const shadowed = !entry && combo ? sc.map.get(combo) : null;
+  // O teste vale para o corpo: atalho só do Para, Cc e Cco (Ctrl+K) não é caractere que
+  // vence, é a tecla do Thunderbird no corpo (Inserir link).
+  const otherScope = shadowed && shadowed.scope == "recipients";
+  const tb = otherScope ? tbKeyMap().get(combo) : null;
   if (entry) {
     result = t("diag.key.shortcut", "atalho {combo} → {cmd}", { combo: sc.display(combo), cmd: cmdLabel(entry) });
-  } else if (shadowed && e.key.length == 1) {
+  } else if (otherScope) {
+    result = tb ? t("diag.tb", "Thunderbird: {action}", { action: tbLabel(tb) }) : t("diag.key.noRibbon", "{combo}: sem atalho da faixa", { combo: sc.display(combo) });
+  } else if (shadowed && e.key.length == 1 && shadowed.typingWins && sc.isCharChord(e)) {
     result = t("diag.key.typesWins", "digita “{key}” (neste teclado o caractere vence o atalho {combo}, {cmd})", { key: e.key, combo: sc.display(combo), cmd: cmdLabel(shadowed) });
   } else if (e.key.length == 1) {
     result = t("diag.key.types", "digita “{key}”", { key: e.key }) +
