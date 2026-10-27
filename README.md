@@ -117,7 +117,7 @@ Troque a URL pelo servidor interno. O que vier em `3rdparty` vale acima da escol
 - Em `assinaturaPadrao`, cada conta procura primeiro o e-mail exato, depois o domínio (`@bluecker.com`) e por fim `*` (todas as contas). `nova` vale para mensagens novas; `resposta`, para respostas e encaminhamentos. `null` quer dizer nenhuma assinatura. Conta sem regra fica com a assinatura das Configurações da conta do Thunderbird.
 - A política vence o usuário **campo a campo**: com só `nova` definida, o usuário ainda escolhe a de respostas. O que a política define aparece travado, com cadeado.
 - Os campos entre chaves vêm da identidade (nome, e-mail, organização) e do cartão de visita dela (vCard, em Configurações da conta → Editar cartão): `{nome}`, `{email}`, `{cargo}`, `{departamento}`, `{organizacao}`, `{telefone}`, `{celular}`, `{site}` (também em inglês: `{name}`, `{title}`, `{phone}`...). A linha cujos campos ficam todos vazios sai da assinatura, e um campo vazio leva junto o separador ao lado (`·`, `|`, `-`, `,`).
-- O HTML passa por uma limpeza: ficam texto, formatação, tabelas, links `http`, `https`, `mailto` e `tel` e imagens `https`, `cid` e `data:` (PNG, JPEG, GIF, WebP). Scripts, eventos, formulários e estilos com `url()` saem. Imagem `https` é baixada por quem recebe; para ir junto com a mensagem, use `data:` (o Thunderbird envia como imagem embutida).
+- O HTML passa por uma limpeza: ficam texto, formatação, tabelas, links `http`, `https`, `mailto` e `tel` e imagens `http`, `https`, `cid` e `data:` (PNG, JPEG, GIF, WebP). Scripts, eventos, formulários e estilos com `url()` saem. Imagem `http` ou `https` é baixada por quem recebe; para ir junto com a mensagem, use `data:` (o Thunderbird envia como imagem embutida).
 
 #### Partes Rápidas da organização
 
@@ -435,13 +435,13 @@ O **AltGr** (Alt da direita) sempre digita o caractere do teclado.
 | Caminho | O que é |
 |---|---|
 | `manifest.json`, `_locales/` | Manifesto MV3 e o nome e a descrição nos seis idiomas |
-| `background.js`, `lib/config.js` | Página de eventos: configuração (política > usuário > padrão), comandos que usam a API compose (prioridade, formato de envio), Salvar Seleção na Galeria, Ajuda e Contatar o Suporte |
+| `background.js`, `lib/config.js` | Página de eventos: configuração (política > usuário > padrão), comandos que usam a API compose (prioridade, formato de envio), Salvar Seleção na Galeria e Ajuda |
 | `experiments/faixa/implementation.js` | API do experiment, controlador de cada janela de composição, autoteste e fila de eventos |
 | `experiments/faixa/host.js` | Tudo o que depende de `messengercompose.xhtml` no TB 153: montagem, Enviar, coluna dos rótulos do cabeçalho, comandos nativos, envio, anexos (mensagens e cartões de visita), pastas e levantamento de teclas |
 | `experiments/faixa/engine.js` | Motor de edição pelo editor do Gecko: um comando = um Ctrl+Z; pincel, tamanhos em pt, estilos, Sombreamento, Bordas, listas de vários níveis, Classificar, Selecionar Texto com Formatação Semelhante, Mesclar Formatação, Alterar Estilos, tabela, Texto sem Formatação, Visualização Dinâmica (fora do editor), normalização do envio |
 | `experiments/faixa/themes.js` | Alterar Estilos: conjuntos de estilos, cores e fontes do tema e espaçamento; a definição da faixa com o tema da mensagem |
 | `experiments/faixa/ui.js` | Interface da faixa (abas, grupos que recolhem, menus, grades de tabela, emoji e símbolos, dicas) e leitura dos atalhos |
-| `experiments/faixa/names.js`, `dialogs.js` | Verificar Nomes e Selecionar Nomes; as janelas da faixa (escolha de nomes, Selecionar Nomes, Anexar Mensagem, cartões de visita, Data e Hora, Salvar Seleção, Contatar o Suporte, Sobre) |
+| `experiments/faixa/names.js`, `dialogs.js` | Verificar Nomes e Selecionar Nomes; as janelas da faixa (escolha de nomes, Selecionar Nomes, Anexar Mensagem, cartões de visita, Data e Hora, Salvar Seleção, Sobre) |
 | `experiments/faixa/signatures.js`, `quickparts.js`, `sanitize.js` | Assinaturas (padrão por conta, campos, troca de conta, menu), Partes Rápidas (galeria, inserção, Salvar Seleção) e a limpeza do HTML delas e do que entra com Mesclar Formatação; também usados pelas páginas Assinaturas e Partes Rápidas |
 | `experiments/faixa/ribbon.css`, `icons.js` | Visual da faixa e ícones (Lucide, licença ISC em `LICENSES/`) |
 | `ribbon/definition.json` | Definição declarativa: comandos, abas, grupos, menus, estilos, emoji e símbolos, perfis de atalho e a tabela de referência do Office. Textos em pt-BR |
