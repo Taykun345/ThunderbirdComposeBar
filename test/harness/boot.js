@@ -352,6 +352,9 @@
         if (i >= 0) own[i] = Object.assign({}, own[i], { nome: args.nome, html: args.html });
         else own.push({ id: "p" + own.length, nome: args.nome, html: args.html, gerenciada: false });
         api.applyConfig(Object.assign({}, api.config, { partesRapidas: [...org, ...own] }));
+        if (args.reply) {
+          controller.setMessageState({ _reply: args.reply, ok: true });
+        }
       }
       window.simCommands = (window.simCommands || []).concat(command);
       window.simCommandArgs = (window.simCommandArgs || []).concat([[command, args]]);

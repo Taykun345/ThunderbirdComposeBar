@@ -1067,12 +1067,22 @@ var FaixaTBHost = class {
         resolve();
         return;
       }
-      const timer = this.chromeWin.setTimeout(resolve, 5000);
+      // Depois dos 5 s (LDAP lento), o que chegar atrasado fica de fora da lista já devolvida.
+      let done = false;
+      const finish = () => {
+        done = true;
+        resolve();
+      };
+      const timer = this.chromeWin.setTimeout(finish, 5000);
       const listener = {
-        onSearchFoundCard: card => push(dir, card),
+        onSearchFoundCard: card => {
+          if (!done) {
+            push(dir, card);
+          }
+        },
         onSearchFinished: () => {
           this.chromeWin.clearTimeout(timer);
-          resolve();
+          finish();
         },
       };
       try {
@@ -1083,7 +1093,7 @@ var FaixaTBHost = class {
         }
       } catch (e) {
         this.chromeWin.clearTimeout(timer);
-        resolve();
+        finish();
       }
     })));
     return out;
@@ -1289,7 +1299,11 @@ var FaixaTBHost = class {
         vcard = it.card ? it.card.toVCard() : "";
       } catch (e) {}
       if (vcard) {
-        const name = String(it.name || it.email || "contato").replace(/[/\\:*?"<>|\u0000-\u001f]/g, "_").trim().slice(0, 80) || "contato";
+        let name = String(it.name || it.email || "contato").replace(/[/\\:*?"<>|\u0000-\u001f]/g, "_").trim().slice(0, 80) || "contato";
+        // Nomes de dispositivo do Windows (CON, NUL, COM1...), também com extensão: o arquivo não seria criado.
+        if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) {
+          name = "_" + name;
+        }
         cards.push({ name, vcard });
       }
     }
